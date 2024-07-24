@@ -428,7 +428,7 @@ def get_bus_possible_boarding_trip_ids(
         )
         & (
             bus_line_boarding_points_spark_df["DATETIME"].cast("long")
-            >= possible_boarding_stop_times["ARRIVE_DATETIME"].cast("long")
+            >= possible_boarding_stop_times["ARRIVE_DATETIME"].cast("long")#only possible if you board then tap.
         ),
         how="left",
     ).drop("STOP_STOP_ID", "STOP_LINE_ID", "STOP_SERVICE_DATE")
