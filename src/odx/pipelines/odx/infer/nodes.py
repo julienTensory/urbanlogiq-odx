@@ -344,7 +344,9 @@ def get_max_possible_boarding_trip_ids(
     ).drop("STOP_STOP_ID", "STOP_LINE_ID", "STOP_SERVICE_DATE")
     max_departure_window = Window.partitionBy(
         F.col("UNIQUE_ROW_ID"),
-        F.col("STOP_LINE_ID_OLD"),#evaluate boarding probability against routes and directions
+        F.col(
+            "STOP_LINE_ID_OLD"
+        ),  # evaluate boarding probability against routes and directions
         F.col("STOP_DIRECTION_ID"),
     ).orderBy(F.col("DEPARTURE_DATETIME").asc())
     max_possible_boarding_points = (
@@ -428,7 +430,9 @@ def get_bus_possible_boarding_trip_ids(
         )
         & (
             bus_line_boarding_points_spark_df["DATETIME"].cast("long")
-            >= possible_boarding_stop_times["ARRIVE_DATETIME"].cast("long")#only possible if you board then tap.
+            >= possible_boarding_stop_times["ARRIVE_DATETIME"].cast(
+                "long"
+            )  # only possible if you board then tap.
         ),
         how="left",
     ).drop("STOP_STOP_ID", "STOP_LINE_ID", "STOP_SERVICE_DATE")
@@ -742,7 +746,6 @@ def get_alighting_probability(
                 ).otherwise(0),
             )
         )
-
     possible_transfer_events_spark_df = possible_transfer_events_spark_df.withColumn(
         "ALIGHTING_PROBABILITY",
         F.product(F.lit(1) - F.col("STOP_ALIGHTING_PROBABILITY")).over(
