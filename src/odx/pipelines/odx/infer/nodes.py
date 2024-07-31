@@ -849,7 +849,9 @@ def select_alighting_based_on_overall_probability(
     )
     # select most confident
     confidence_selection_window = Window.partitionBy("UNIQUE_ROW_ID").orderBy(
-        F.col("CONFIDENCE").desc()
+        F.col("CONFIDENCE").desc(),
+        F.col("ARRIVE_DATETIME").asc(),
+        F.col("ALIGHTING_ARRIVE_DATETIME").asc(),
     )
     bus_transfer_events_spark_df = (
         bus_transfer_events_spark_df.withColumn(
