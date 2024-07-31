@@ -832,8 +832,8 @@ def select_alighting_based_on_overall_probability(
     # select most confident
     confidence_selection_window = Window.partitionBy("UNIQUE_ROW_ID").orderBy(
         F.col("CONFIDENCE").desc(),
-        F.col("ARRIVE_DATETIME").asc(),
-        F.col("ALIGHTING_ARRIVE_DATETIME").asc(),
+        # F.col("BOARDING_PROBABILITY").desc(),
+        # F.col("ALIGHTING_ARRIVE_DATETIME").asc(),
     )
     bus_transfer_events_spark_df = (
         bus_transfer_events_spark_df.withColumn(
@@ -1171,7 +1171,7 @@ def reshape_journeys(inferred_transfers_spark_df: SparkDF) -> SparkDF:
     boardings = (
         inferred_transfers_spark_df.select(
             F.col("FARE_CATEGORY_DESCRIPTION"),
-            F.col("ARRIVE_DATETIME").alias("DATETIME"),
+            F.col("DEPARTURE_DATETIME").alias("DATETIME"),
             "STOP_ID",
             "CARD_ID",
             "JOURNEY_ID",
