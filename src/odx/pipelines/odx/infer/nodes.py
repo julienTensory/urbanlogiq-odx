@@ -840,21 +840,6 @@ def select_alighting_based_on_overall_probability(
         "SUM_ROUTE_AND_DIRECTION_UTILITIES",
         "ROUTE_AND_DIRECTION_SELECTION_PROBABILITY",
     )
-    #####DUBUGGING####
-    # debugging_dates = [
-    #     "2024-04-01",
-    #     "2024-04-02",
-    #     "2024-04-03",
-    #     "2024-04-04",
-    #     "2024-04-05",
-    #     "2024-04-06",
-    #     "2024-04-07",
-    #     "2024-04-08",
-    # ]
-    # possible_transfer_events_spark_df = possible_transfer_events_spark_df.filter(
-    #     F.col("SERVICE_DATE").isin(debugging_dates)
-    # )
-    ####END DEBUGGING####
     ####handle buses
     bus_transfer_events_spark_df = possible_transfer_events_spark_df.filter(
         F.col("LINE_ID") != 200
@@ -1251,7 +1236,7 @@ def reshape_journeys(inferred_transfers_spark_df: SparkDF) -> SparkDF:
             F.col("INTERLINING_ROUTE_ID").alias("LINE_ID"),
             F.col("INTERLINING_STOP_LAT").alias("STOP_LAT"),
             F.col("INTERLINING_STOP_LON").alias("STOP_LON"),
-            "DIRECTION_ID",
+            F.col("STOP_DIRECTION_ID").alias("DIRECTION_ID"),
             "CONFIDENCE",
         )
         .withColumn("EVENT", F.lit("INTERLINE_STARTED"))
@@ -1267,7 +1252,7 @@ def reshape_journeys(inferred_transfers_spark_df: SparkDF) -> SparkDF:
             F.col("INTERLINING_ROUTE_ID_NEXT").alias("LINE_ID"),
             F.col("INTERLINING_STOP_LAT_NEXT").alias("STOP_LAT"),
             F.col("INTERLINING_STOP_LON_NEXT").alias("STOP_LON"),
-            "DIRECTION_ID",
+            F.col("STOP_DIRECTION_ID").alias("DIRECTION_ID"),
             "CONFIDENCE",
         )
         .withColumn("EVENT", F.lit("INTERLINE_ENDED"))
