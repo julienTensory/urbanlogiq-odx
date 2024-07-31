@@ -2,6 +2,7 @@
 hop_raw_datetime_column: "TAP_TIME" #the column containing the raw datetime strings for the taps in the hop data
 unique_rider_column: "CARD_ID" #the column identifying unique tickets
 hop_line_id_column: "LINE_ID"
+duplicate_tap_threshold_seconds: 20 #number of seconds under which two subsequent taps will result in a duplicate.
 
 hop_no_nulls_columns: [
   "CARD_ID",
