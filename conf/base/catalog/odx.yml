@@ -46,7 +46,7 @@ inferred_rider_events_spark_df:
   type: "kedro.extras.datasets.spark.SparkDataSet"
   filepath: "data/03_primary/rider_events_partitioned/"
   save_args:
-    mode: "append"
+    mode: "overwrite"
     partitionBy: "JOURNEY_START_DATE"
 
 #metrics
