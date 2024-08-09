@@ -18,7 +18,7 @@ from functools import reduce
 from typing import List, Tuple, Union
 
 from loguru import logger
-from pyspark.sql import DataFrame as SparkDF, functions as F
+from pyspark.sql import DataFrame as SparkDF, functions as F, Column
 from pyspark.sql.types import StringType
 from pyspark.sql.window import Window
 
@@ -26,7 +26,6 @@ from .impossible_conditions_and_descriptions import (
     get_impossible_conditions_and_descriptions,
 )
 from .utils import haversine_meters
-
 
 
 def get_year_months(
@@ -657,36 +656,40 @@ def get_alighting_probability(
             ),
         )
     )
+
+    def calculate_stop_alighting_probability() -> Column:
+        return (
+            F.lit(0.5).cast("double")
+            * (
+                F.lit(1).cast("double")
+                / (
+                    F.col("MAX_TRAVEL_TIME_SECONDS").cast("double")
+                    - F.col("MIN_TRAVEL_TIME_SECONDS").cast("double")
+                )
+            )
+        ) ** 2 / (
+            (
+                F.col("TRAVEL_TIME_SECONDS").cast("double")
+                - F.col("MIN_TRAVEL_TIME_SECONDS").cast("double")
+            )
+            ** 2
+            + (
+                F.lit(0.5).cast("double")
+                * (
+                    F.lit(1).cast("double")
+                    / (
+                        F.col("MAX_TRAVEL_TIME_SECONDS").cast("double")
+                        - F.col("MIN_TRAVEL_TIME_SECONDS").cast("double")
+                    )
+                )
+            )
+            ** 2
+        )
+
     if allow_no_stops:
         possible_transfer_events_spark_df = (
             possible_transfer_events_spark_df.withColumn(
-                "STOP_ALIGHTING_PROBABILITY",
-                (
-                    F.lit(0.5)
-                    * (
-                        F.lit(1)
-                        / (
-                            F.col("MAX_TRAVEL_TIME_SECONDS")
-                            - F.col("MIN_TRAVEL_TIME_SECONDS")
-                        )
-                    )
-                )
-                ** 2
-                / (
-                    (F.col("TRAVEL_TIME_SECONDS") - F.col("MIN_TRAVEL_TIME_SECONDS"))
-                    ** 2
-                    + (
-                        F.lit(0.5)
-                        * (
-                            F.lit(1)
-                            / (
-                                F.col("MAX_TRAVEL_TIME_SECONDS")
-                                - F.col("MIN_TRAVEL_TIME_SECONDS")
-                            )
-                        )
-                    )
-                    ** 2
-                ),
+                "STOP_ALIGHTING_PROBABILITY", calculate_stop_alighting_probability()
             )
         )
     else:
@@ -696,44 +699,27 @@ def get_alighting_probability(
                 F.when(
                     F.col("ALIGHTING_ARRIVE_DATETIME")
                     != F.col("ALIGHTING_DEPARTURE_DATETIME"),
-                    (
-                        F.lit(0.5)
-                        * (
-                            F.lit(1)
-                            / (
-                                F.col("MAX_TRAVEL_TIME_SECONDS")
-                                - F.col("MIN_TRAVEL_TIME_SECONDS")
-                            )
-                        )
-                    )
-                    ** 2
-                    / (
-                        (
-                            F.col("TRAVEL_TIME_SECONDS")
-                            - F.col("MIN_TRAVEL_TIME_SECONDS")
-                        )
-                        ** 2
-                        + (
-                            F.lit(0.5)
-                            * (
-                                F.lit(1)
-                                / (
-                                    F.col("MAX_TRAVEL_TIME_SECONDS")
-                                    - F.col("MIN_TRAVEL_TIME_SECONDS")
-                                )
-                            )
-                        )
-                        ** 2
-                    ),
-                ).otherwise(0),
+                    calculate_stop_alighting_probability(),
+                ).otherwise(F.lit(0).cast("double")),
             )
         )
     possible_transfer_events_spark_df = possible_transfer_events_spark_df.withColumn(
-        "ALIGHTING_PROBABILITY",
-        F.product(F.lit(1) - F.col("STOP_ALIGHTING_PROBABILITY")).over(
-            within_trip_window.rowsBetween(Window.unboundedPreceding, -1)
+        "CUMULATIVE_NOT_ALIGHTING_PROBABILITY",
+        F.product(
+            F.lit(1).cast("double") - F.col("STOP_ALIGHTING_PROBABILITY").cast("double")
+        ).over(within_trip_window.rowsBetween(Window.unboundedPreceding, -1)),
+    ).withColumn(#handle nulls due to lag on window
+        "CUMULATIVE_NOT_ALIGHTING_PROBABILITY",
+        F.when(F.col("CUMULATIVE_NOT_ALIGHTING_PROBABILITY").isNull(), 1).otherwise(
+            F.col("CUMULATIVE_NOT_ALIGHTING_PROBABILITY")
+        ),
+    )
+    possible_transfer_events_spark_df = (
+        possible_transfer_events_spark_df.withColumn(
+            "ALIGHTING_PROBABILITY",
+            F.col("STOP_ALIGHTING_PROBABILITY").cast("double")
+            * F.col("CUMULATIVE_NOT_ALIGHTING_PROBABILITY"),
         )
-        * F.col("STOP_ALIGHTING_PROBABILITY"),
     )
     return possible_transfer_events_spark_df
 
@@ -815,7 +801,8 @@ def select_alighting_based_on_overall_probability(
         F.col("ALIGHTING_PROBABILITY")
         * F.col("BOARDING_PROBABILITY")
         * F.col("ROUTE_AND_DIRECTION_SELECTION_PROBABILITY"),
-    ).drop(
+    )
+    max_transfer_events_spark_df = max_transfer_events_spark_df.drop(
         "MIN_TRAVEL_TIME_ALL_TRIPS",
         "MIN_ROUTE_AND_DIRECTION_TRAVEL_TIME",
         "ROUTE_AND_DIRECTION_UTILITY",
@@ -832,8 +819,7 @@ def select_alighting_based_on_overall_probability(
     # select most confident
     confidence_selection_window = Window.partitionBy("UNIQUE_ROW_ID").orderBy(
         F.col("CONFIDENCE").desc(),
-        # F.col("BOARDING_PROBABILITY").desc(),
-        # F.col("ALIGHTING_ARRIVE_DATETIME").asc(),
+        F.col("ALIGHTING_ARRIVE_DATETIME").asc(),
     )
     bus_transfer_events_spark_df = (
         bus_transfer_events_spark_df.withColumn(
