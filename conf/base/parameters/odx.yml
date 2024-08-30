@@ -11,7 +11,7 @@ hop_no_nulls_columns: [
   "STOP_ID"
 ]
 ignored_service_names: [ #list of operators to ignore. Any journey including these services will be removed. Filters on the "OPERATEDBY_DESCRIPTION" column
-  "CTRAN", "PSC"
+  "CTRAN", "PSC", "WES"
 ]
 
 line_id_mappings: { #mainly exists because StreetCar and MAX lines aren't differentiated within the HOP data, but are differentiated in the GTFS data
