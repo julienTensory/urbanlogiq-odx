@@ -27,6 +27,7 @@ from .nodes import (
     get_transfer_distance_and_minimum_required_transfer_time,
     select_alighting_based_on_overall_probability,
     get_alighting_probability,
+    calculate_validity_score,
     remove_impossible_journeys,
     reshape_journeys,
     reshape_failed_journeys,
@@ -225,9 +226,16 @@ def create_pipeline(**kwargs) -> Pipeline:
                 name="reshape_impossible_journeys_for_output",
             ),
             node(
+                func = calculate_validity_score,
+                inputs = ["hop_events_with_journey_ids_spark_df_w_impossible_journeys_removed"],
+                outputs = "hop_events_with_validity_score_calculated",
+                tags =tags,
+                name = "calculate_validity_score"
+            ),
+            node(
                 func=reshape_journeys,
                 inputs=[
-                    "hop_events_with_journey_ids_spark_df_w_impossible_journeys_removed",
+                    "hop_events_with_validity_score_calculated",
                 ],
                 outputs="rider_events_spark_df",
                 tags=tags,

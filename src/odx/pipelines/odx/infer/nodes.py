@@ -708,18 +708,16 @@ def get_alighting_probability(
         F.product(
             F.lit(1).cast("double") - F.col("STOP_ALIGHTING_PROBABILITY").cast("double")
         ).over(within_trip_window.rowsBetween(Window.unboundedPreceding, -1)),
-    ).withColumn(#handle nulls due to lag on window
+    ).withColumn(  # handle nulls due to lag on window
         "CUMULATIVE_NOT_ALIGHTING_PROBABILITY",
         F.when(F.col("CUMULATIVE_NOT_ALIGHTING_PROBABILITY").isNull(), 1).otherwise(
             F.col("CUMULATIVE_NOT_ALIGHTING_PROBABILITY")
         ),
     )
-    possible_transfer_events_spark_df = (
-        possible_transfer_events_spark_df.withColumn(
-            "ALIGHTING_PROBABILITY",
-            F.col("STOP_ALIGHTING_PROBABILITY").cast("double")
-            * F.col("CUMULATIVE_NOT_ALIGHTING_PROBABILITY"),
-        )
+    possible_transfer_events_spark_df = possible_transfer_events_spark_df.withColumn(
+        "ALIGHTING_PROBABILITY",
+        F.col("STOP_ALIGHTING_PROBABILITY").cast("double")
+        * F.col("CUMULATIVE_NOT_ALIGHTING_PROBABILITY"),
     )
     return possible_transfer_events_spark_df
 
@@ -938,6 +936,44 @@ def create_journey_ids_based_on_headway(
                 256,
             ),
         ).otherwise(F.col("JOURNEY_ID")),
+    )
+    return rider_events_spark_df
+
+
+def calculate_validity_score(rider_events_spark_df: SparkDF) -> SparkDF:
+    window = Window.partitionBy("JOURNEY_ID").orderBy(F.col("DATETIME"))
+    rider_events_spark_df = rider_events_spark_df.withColumn(
+        "STOP_LAT_NEXT_ORIGIN", F.last(F.col("STOP_LAT_NEXT")).over(window)
+    ).withColumn("STOP_LON_NEXT_ORIGIN", F.last(F.col("STOP_LON_NEXT")).over(window))
+    rider_events_spark_df = (
+        rider_events_spark_df.withColumn(
+            "ORIGIN_ORIGIN_DISTANCE_METERS",
+            haversine_meters(
+                F.col("STOP_LAT"),
+                F.col("STOP_LON"),
+                F.col("STOP_LAT_NEXT_ORIGIN"),
+                F.col("STOP_LON_NEXT_ORIGIN"),
+            ),
+        )
+        .withColumn(
+            "MAX_TRANSFER_DISTANCE_METERS",
+            F.max(F.col("TRANSFER_DISTANCE_METERS")).over(window),
+        )
+        .withColumn(
+            "VALIDITY_SCORE",
+            1
+            / (
+                1
+                + F.col("MAX_TRANSFER_DISTANCE_METERS")
+                / F.col("ORIGIN_ORIGIN_DISTANCE_METERS")
+            ),
+        )
+        .withColumn(
+            "VALIDITY_SCORE",
+            F.when(F.col("ORIGIN_ORIGIN_DISTANCE_METERS") == 0, 0).otherwise(
+                F.col("VALIDITY_SCORE")
+            ),
+        )
     )
     return rider_events_spark_df
 
@@ -1165,6 +1201,7 @@ def reshape_journeys(inferred_transfers_spark_df: SparkDF) -> SparkDF:
             "STOP_LAT",
             "STOP_LON",
             F.col("STOP_DIRECTION_ID").alias("DIRECTION_ID"),  # use gtfs direction id,
+            "VALIDITY_SCORE",
         )
         .withColumn("EVENT", F.lit("BOARDED"))
         .withColumn("CONFIDENCE", F.lit(1))
@@ -1185,6 +1222,7 @@ def reshape_journeys(inferred_transfers_spark_df: SparkDF) -> SparkDF:
             F.col("ALIGHTING_STOP_LON").alias("STOP_LON"),
             F.col("STOP_DIRECTION_ID").alias("DIRECTION_ID"),
             "CONFIDENCE",
+            "VALIDITY_SCORE",
         )
         .withColumn("EVENT", F.lit("ALIGHTED"))
     ).filter(
@@ -1208,6 +1246,7 @@ def reshape_journeys(inferred_transfers_spark_df: SparkDF) -> SparkDF:
             F.col("INTERLINING_STOP_LON").alias("STOP_LON"),
             F.col("STOP_DIRECTION_ID").alias("DIRECTION_ID"),
             "CONFIDENCE",
+            "VALIDITY_SCORE",
         )
         .withColumn("EVENT", F.lit("INTERLINE_STARTED"))
         .withColumn("EVENT_TYPE", F.lit("MID_JOURNEY"))
@@ -1224,6 +1263,7 @@ def reshape_journeys(inferred_transfers_spark_df: SparkDF) -> SparkDF:
             F.col("INTERLINING_STOP_LON_NEXT").alias("STOP_LON"),
             F.col("STOP_DIRECTION_ID").alias("DIRECTION_ID"),
             "CONFIDENCE",
+            "VALIDITY_SCORE",
         )
         .withColumn("EVENT", F.lit("INTERLINE_ENDED"))
         .withColumn("EVENT_TYPE", F.lit("MID_JOURNEY"))
